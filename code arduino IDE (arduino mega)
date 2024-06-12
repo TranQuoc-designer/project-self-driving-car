@@ -1,0 +1,416 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Địa chỉ I2C 0x27, màn hình 16x2
+
+const int nutNhan = 48;      // Chân của nút nhấn chuyển chế độ
+const int nutSOS = 49;   // Chân của nút dừng khẩn cấp
+int GTnutNow = 0;          // Biến để lưu trạng thái nút nhấn hiện tại
+int GTnutPAST = 0;      // Biến để lưu trạng thái nút nhấn trước đó
+int GTnutSOSnow = 0;       // Biến để lưu trạng thái nút dừng khẩn cấp hiện tại
+int GTnutSOSpast = 0;   // Biến để lưu trạng thái nút dừng khẩn cấp trước đó
+int dem = 1;          // Biến trạng thái chế độ (bắt đầu từ chế độ 1: Đứng yên)
+
+#define BTN7960_R1 50
+#define BTN7960_R2 51
+#define BTN7960_L1 52
+#define BTN7960_L2 53
+#define speed_R    3 //0->255
+#define speed_L    2 //0->255
+#define coi        47
+
+const int     CBVC=18;
+volatile bool check = false;
+char          lenh;
+int           PWM;
+void setup() 
+{
+  Serial.begin(9600);
+
+ // Khởi tạo I2C
+  Wire.begin();
+  // Khởi tạo LCD
+  lcd.init();
+  // Bật đèn nền LCD
+  lcd.backlight();
+  // In ra màn hình
+  lcd.setCursor(0, 0);// chọn hàng,cột con trỏ đàu tiên lcd.setCursor(1->16, 0&1)
+  lcd.print("Xin chao!");// in ra lcd
+
+  pinMode(BTN7960_R1, OUTPUT);
+  pinMode(BTN7960_R2, OUTPUT);
+  pinMode(BTN7960_L1, OUTPUT);
+  pinMode(BTN7960_L2, OUTPUT);
+  pinMode(speed_R, OUTPUT);
+  pinMode(speed_L, OUTPUT);
+  pinMode(coi, OUTPUT);
+  pinMode(nutNhan, INPUT_PULLUP);
+  pinMode(nutSOS, INPUT_PULLUP);
+  printMode(dem);// In chế độ ban đầu
+  attachInterrupt(digitalPinToInterrupt(CBVC), ngatISR, CHANGE); // Cài đặt hàm ngắt
+}
+void loop() 
+{
+// Đọc trạng thái hiện tại của nút nhấn và nút dừng khẩn cấp
+  GTnutNow = digitalRead(nutNhan);
+  GTnutSOSnow = digitalRead(nutSOS);
+
+  // Kiểm tra nếu nút dừng khẩn cấp được nhấn
+  if (GTnutSOSnow == HIGH && GTnutSOSpast == LOW) {
+    dung();
+    dem=1;
+     printMode(dem);
+  }
+
+  // Kiểm tra nếu trạng thái nút nhấn đã thay đổi từ chưa nhấn sang nhấn
+  if (GTnutNow == HIGH && GTnutPAST == LOW) {
+    // Tăng chế độ hiện tại
+    dem++;
+    // Nếu chế độ vượt quá số chế độ cho phép, quay lại chế độ đầu tiên
+    if (dem > 3) {
+      dem = 1;
+    }
+    // In chế độ hiện tại
+    printMode(dem);
+    // Đợi một chút để tránh nhiễu nút nhấn
+    delay(500);
+  }
+  // Lưu trạng thái nút nhấn và nút dừng khẩn cấp hiện tại vào các biến last
+  GTnutPAST = GTnutNow;
+  GTnutSOSpast = GTnutSOSnow;
+  // Thực hiện hành động dựa trên chế độ hiện tại
+  switch (dem) {
+    case 1:
+      // Mã cho chế độ đứng yên
+      DUNGIM();
+      break;
+    case 2:
+      // Mã cho chế độ điều khiển bằng tay
+      DKtay();
+      break;
+    case 3:
+      // Mã cho chế độ điều khiển tự động
+      DKauto();
+      break;
+    default:
+      break;
+  }
+}
+void DUNGIM()
+{
+  dung();
+    //Kiểm tra nút chuyển chế độ
+    GTnutNow = digitalRead(nutNhan);
+    if (GTnutNow == HIGH && GTnutPAST == LOW) 
+    {
+      dem++;
+      if (dem > 3) {
+        dem = 1;
+      }
+      printMode(dem);
+      delay(500);
+    }
+    GTnutPAST = GTnutNow;
+}
+void DKtay()
+{
+ 
+    if ( Serial.available() >0) 
+    {
+    lenh=  Serial.read();
+    Serial.println(lenh);
+    }
+  switch (lenh) 
+  {
+   
+  while (dem == 2) {
+    // Thực hiện điều khiển bằng tay ở đây
+     case 'F':  tien();
+    break;
+    case 'G': lui();
+    break;
+    case 'L': trai();
+    break;
+    case 'R': phai();
+      break;
+    case 'Q': tientrai45();
+    break;
+    case 'E': tienphai45();
+      break;
+    case 'Z': luitrai45();
+      break;
+    case 'C': luiphai45();
+      break;
+    case 'S': dung();
+      break;  
+    case 'T': digitalWrite(coi,LOW);
+      break;  
+    case 't': digitalWrite(coi,HIGH);
+      break; 
+    }
+    // ...
+
+    // Kiểm tra nút dừng khẩn cấp
+    GTnutSOSnow = digitalRead(nutSOS);
+    if (GTnutSOSnow == HIGH && GTnutSOSpast == LOW)
+    {
+      dung();
+      dem=1;
+       printMode(dem);
+    }
+    GTnutSOSpast   = GTnutSOSnow;
+    
+    // Kiểm tra nút chuyển chế độ
+    GTnutNow = digitalRead(nutNhan);
+    if (GTnutNow == HIGH && GTnutPAST == LOW) 
+    {
+      dem++;
+      if (dem > 3) 
+      {
+        dem = 1;
+      }
+      printMode(dem);
+      delay(500);
+    }
+    GTnutPAST = GTnutNow;
+ }
+}
+void DKauto()
+{
+ 
+  while (dem == 3) {
+    // Thực hiện các hành động tự động ở đây
+    if (Serial.available() > 0) { // Kiểm tra nếu có dữ liệu đến
+    String data = Serial.readStringUntil('\n'); // Đọc dữ liệu đến cho đến khi gặp ký tự xuống dòng
+    if (data == "F")
+      { tien();
+        lcd.clear();
+        lcd.setCursor(7, 0);
+        lcd.print("tien");
+      }
+   else if (data == "L")
+      {
+        trai();
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("trai");
+      }
+  else if (data == "R")
+      {
+        phai();
+        lcd.clear();
+        lcd.setCursor(12, 0);
+        lcd.print("phai");
+      }
+    else if (data == "Q")
+      {
+        tientrai45();
+        lcd.clear();
+        lcd.setCursor(3, 0);
+        lcd.print("trai45");
+      }
+    else if (data == "E")
+      {
+        tienphai45();
+        lcd.clear();
+        lcd.setCursor(10, 0);
+        lcd.print("phai45");
+      }
+      else if (data == "D")
+      {
+        dung();
+        lcd.clear();
+        lcd.setCursor(2, 0);
+        lcd.print("dung");
+
+      }
+  }
+
+    // Kiểm tra nút dừng khẩn cấp
+    GTnutSOSnow = digitalRead(nutSOS);
+    if (GTnutSOSnow == HIGH && GTnutSOSpast == LOW) 
+    {
+      dung();
+      dem=1;
+       printMode(dem);
+    }
+    GTnutSOSpast = GTnutSOSnow;
+    // Kiểm tra nút chuyển chế độ
+    GTnutNow = digitalRead(nutNhan);
+    if (GTnutNow == HIGH && GTnutPAST == LOW) 
+    {
+      dem++;
+      if (dem > 3) 
+      {
+      dem = 1;
+      }
+      printMode(dem);
+      delay(500);
+    }
+    GTnutPAST = GTnutNow;
+  }
+}
+void printMode(int mode) 
+{
+  switch (mode) {
+    case 1:
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Đung yen");
+      Serial.println("Chế độ hiện tại: Đứng yên");
+      break;
+    case 2:
+      lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("dk tay");
+      Serial.println("Chế độ hiện tại: Điều khiển bằng tay");
+      break;
+    case 3:
+       lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("dk auto");
+      Serial.println("Chế độ hiện tại: Điều khiển tự động");
+      break;
+    default:
+      break;
+  }
+}
+
+void ngatISR() 
+ {
+ check = !check;
+ }
+void tien()
+  {
+ 
+   if (check){
+                dung();
+                digitalWrite(coi,0); 
+                delay(100);
+                digitalWrite(coi,1); 
+                delay(100);
+                Serial.println("bị chặn");
+              }else { PWM= 70;
+                      analogWrite(speed_L, PWM);
+                      analogWrite(speed_R, PWM);
+                      digitalWrite(BTN7960_L1, 1);
+                      digitalWrite(BTN7960_L2, 0);
+                      digitalWrite(BTN7960_R1, 1);
+                      digitalWrite(BTN7960_R2, 0);}
+   // delay(100);
+  }
+void lui()
+  {
+   PWM=100;
+   analogWrite(speed_R, PWM);
+   analogWrite(speed_L, PWM);
+   digitalWrite(BTN7960_R1, 0);
+   digitalWrite(BTN7960_R2, 1);
+   digitalWrite(BTN7960_L1, 0);
+   digitalWrite(BTN7960_L2, 1);
+   delay(100);
+  }
+void dung()
+  {
+    PWM= 0;
+   analogWrite(speed_R, PWM);
+   analogWrite(speed_L, PWM); 
+   //delay(5000);
+  }
+void trai()
+  {
+    if (check){
+                dung();
+                digitalWrite(coi,0); 
+                delay(100);
+                digitalWrite(coi,1); 
+                delay(100);
+                Serial.println("bị chặn");
+              }else {
+  PWM= 60;
+   analogWrite(speed_L,PWM*1/2);
+   analogWrite(speed_R, PWM);
+   digitalWrite(BTN7960_L1, 1);
+   digitalWrite(BTN7960_L2, 0);
+   digitalWrite(BTN7960_R1, 1);
+   digitalWrite(BTN7960_R2, 0);}
+   //delay(100);
+ }
+void phai()
+ { 
+  if (check){
+                dung();
+                digitalWrite(coi,0); 
+                delay(100);
+                digitalWrite(coi,1); 
+                delay(100);
+                Serial.println("bị chặn");
+              }else { 
+  PWM= 60;
+   analogWrite(speed_L,PWM);
+   analogWrite(speed_R, PWM*1/2);
+   digitalWrite(BTN7960_L1, 1);
+   digitalWrite(BTN7960_L2, 0);
+   digitalWrite(BTN7960_R1, 1);
+   digitalWrite(BTN7960_R2, 0);}
+ // delay(100);
+ }
+void tientrai45()
+ {
+  if (check){
+                dung();
+                digitalWrite(coi,0); 
+                delay(100);
+                digitalWrite(coi,1); 
+                delay(100);
+                Serial.println("bị chặn");
+              }else {
+  PWM= 50;
+   analogWrite(speed_L,PWM*3/4);
+   analogWrite(speed_R, PWM);
+   digitalWrite(BTN7960_L1, 1);
+   digitalWrite(BTN7960_L2, 0);
+   digitalWrite(BTN7960_R1, 1);
+   digitalWrite(BTN7960_R2, 0);}
+   //delay(100);
+ }
+void tienphai45()
+ { 
+  if (check){
+                dung();
+                digitalWrite(coi,0); 
+                delay(100);
+                digitalWrite(coi,1); 
+                delay(100);
+                Serial.println("bị chặn");
+              }else { 
+  PWM= 50;
+   analogWrite(speed_L,PWM);
+   analogWrite(speed_R, PWM*3/4);
+   digitalWrite(BTN7960_L1, 1);
+   digitalWrite(BTN7960_L2, 0);
+   digitalWrite(BTN7960_R1, 1);
+   digitalWrite(BTN7960_R2, 0);}
+ // delay(100);
+ }
+void luitrai45()
+ {
+  analogWrite(speed_L,60);
+   analogWrite(speed_R,100);
+   digitalWrite(BTN7960_R1, 0);
+   digitalWrite(BTN7960_R2, 1);
+   digitalWrite(BTN7960_L1, 0);
+   digitalWrite(BTN7960_L2, 1);
+   delay(100);
+ }
+void luiphai45()
+  {
+   analogWrite(speed_L,100);
+   analogWrite(speed_R,60);
+   digitalWrite(BTN7960_R1, 0);
+   digitalWrite(BTN7960_R2, 1);
+   digitalWrite(BTN7960_L1, 0);
+   digitalWrite(BTN7960_L2, 1);
+   delay(100);
+  }
+
