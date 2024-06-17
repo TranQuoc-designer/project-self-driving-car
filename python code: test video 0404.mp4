@@ -4,9 +4,21 @@ import time
 import utlis
 
 #Step 1
+def thresholding(img):
+    imgHsv = cv2.cvtColor(img,cv2.COLOR_BGR2HSV)
+    h_min = 0
+    h_max = 179
+    s_min = 0
+    s_max = 255
+    v_min = 0
+    v_max = 100
+    lowerWhite = np.array([h_min, s_min, v_min])
+    upperWhite = np.array([h_max, s_max, v_max])
+    maskWhite = cv2.inRange(imgHsv,lowerWhite,upperWhite)
+    return maskWhite
 def preprocess(img):
     """Tiền xử lý ảnh"""
-    imgThres = utlis.thresholding(img)
+    imgThres = thresholding(img)
     # img = grayscale(img)
     img_gauss = cv2.GaussianBlur(imgThres, (11, 11), 0)
     thresh_low = 150
